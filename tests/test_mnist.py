@@ -42,12 +42,14 @@ def noised_model(sigma=1.0):
     zs = []
 
     forward_layers = []
+    forward_scale_and_shift_layers = []
 
     zs_ti.append(y)
     for unit_count in unit_count_list[1:]:
         forward_layers.append(keras.layers.Dense(unit_count))
         z_ti = forward_layers[-1](y)
-        z_ti = OnlyBatchNormalization(mode=2)(z_ti)
+        forward_scale_and_shift_layers.append(OnlyBatchNormalization(mode=2))
+        z_ti = forward_scale_and_shift_layers[-1](z_ti)
         z_ti = keras.layers.GaussianNoise(sigma)(z_ti)
         y = ScaleAndShift(mode=2)(z_ti)
         y = keras.layers.Activation('relu')(y)
@@ -57,10 +59,10 @@ def noised_model(sigma=1.0):
     y = flatten_x
     zs.append(y)
     zs_pre.append(y)
-    for forward_layer in forward_layers:
+    for forward_layer, forward_scale_and_shift_layer in zip(forward_layers, forward_scale_and_shift_layers):
         z_pre = forward_layer(y)
         z = OnlyBatchNormalization(mode=2)(z_pre)
-        y = ScaleAndShift(mode=2)(z)
+        y = forward_scale_and_shift_layer(z)
         y = keras.layers.Activation('relu')(y)
         zs_pre.append(z_pre)
         zs.append(z)
