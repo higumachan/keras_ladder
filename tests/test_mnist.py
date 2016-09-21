@@ -10,7 +10,23 @@ import random
 
 
 class PrintOutputValAccOnly(keras.callbacks.Callback):
-    def on_batch_end(self, batch, logs={}):
+    def on_epoch_end(self, batch, logs={}):
+        print("val_output_acc:{val_output_acc}, val_output_noised_acc:{val_output_noised_acc}".format(**logs))
+
+
+class PrintEvaluate(keras.callbacks.Callback):
+    def __init__(self, X_train, y_train):
+        self.X_train = X_train
+        self.y_train = y_train
+
+
+    def on_epoch_end(self, batch, logs={}):
+        evaluate_result = self.model.evaluate(self.X_train, self.y_train)
+        print(
+            "train_output_acc:{output_acc}, train_output_noised_acc:{output_noised_acc}".format(
+                **dict(zip(*evaluate_result))
+            )
+        )
         print("val_output_acc:{val_output_acc}, val_output_noised_acc:{val_output_noised_acc}".format(**logs))
 
 
@@ -244,7 +260,8 @@ def train():
         ),
         callbacks=[
             keras.callbacks.LearningRateScheduler(scheduler),
-            PrintOutputValAccOnly,
+            PrintOutputValAccOnly(),
+            PrintEvaluate(X_train, y_train),
         ]
     )
 
