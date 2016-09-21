@@ -12,7 +12,7 @@ def batch_nomalize_other_layer(xs):
     x, z = xs
 
     mean = (K.mean(z, 0, keepdims=True))
-    std = (K.var(z, 0, keepdims=True) ** 0.5 + 1e-5)
+    std = K.var(z, 0, keepdims=True) ** 0.5 + 1e-5
 
     return (x - mean) / std
 
@@ -66,12 +66,11 @@ def noised_model(sigma=1.0):
         y = keras.layers.Activation('relu')(y)
         zs_pre.append(z_pre)
         zs.append(z)
-    y = keras.layers.Dense(10)(y)
-    output = keras.layers.Activation('softmax', name='output')(y)
+    output = keras.layers.Dense(10, activation='softmax', name='output')(y)
 
 
     zs_bn_error = []
-    z_hat = OnlyBatchNormalization(mode=2)(y)
+    z_hat = output_noised
     for i, unit_count in list(enumerate(unit_count_list))[::-1]:
         u = keras.layers.Dense(unit_count)(z_hat)
         u = OnlyBatchNormalization(mode=2)(u)
@@ -81,7 +80,7 @@ def noised_model(sigma=1.0):
             mode=batch_nomalize_other_layer,
             output_shape=batch_nomalize_other_layer_shape,
         )
-        z_bn_hat = z_hat
+        #z_bn_hat = z_hat
         zs_bn_error.append(keras.layers.merge(
             [zs[i], z_bn_hat],
             mode=lambda xs: xs[0] - xs[1],
@@ -111,8 +110,8 @@ def normal_model():
     y = keras.layers.Dense(250)(y)
     y = keras.layers.BatchNormalization()(y)
     y = keras.layers.Activation('relu')(y)
-    y = keras.layers.Dense(10)(y)
-    output = keras.layers.Activation('softmax')(y)
+    y = keras.layers.Dense(10, activation='softmax', name='output')(y)
+    output = y
 
     return keras.models.Model(x, output)
 
@@ -203,7 +202,7 @@ def train():
     print y_train_labeled.shape, y_train_unlabeled.shape
 
     def scheduler(index):
-        return 0.002 if index < 100 else min(0, (index - 100) * -(0.002 / 50) + (0.002))
+        return 0.002 if index < 100 else max(0.0, (index - 100.0) * -(0.002 / 50) + 0.002)
 
     nmodel = normal_model()
     nmodel.compile('adam', 'categorical_crossentropy', metrics=['accuracy'])
