@@ -5,6 +5,7 @@ import keras
 from layers.vanilla_conbinator import VanillaConbinator
 import numpy as np
 from toolz.dicttoolz import merge
+from keras.utils.visualize_util import plot
 import random
 
 
@@ -45,25 +46,26 @@ def noised_model(sigma=1.0):
     forward_scale_and_shift_layers = []
 
     zs_ti.append(y)
-    for unit_count in unit_count_list[1:]:
-        forward_layers.append(keras.layers.Dense(unit_count, bias=False))
+    for i, unit_count in list(enumerate(unit_count_list))[1:]:
+        forward_layers.append(keras.layers.Dense(unit_count, bias=False, name='encoder_{}'.format(i)))
         z_ti = forward_layers[-1](y)
-        z_ti = OnlyBatchNormalization(mode=2)(z_ti)
-        z_ti = keras.layers.GaussianNoise(sigma)(z_ti)
-        forward_scale_and_shift_layers.append(ScaleAndShift(mode=2))
+        z_ti = OnlyBatchNormalization(mode=2, name='encoder_noised_bn_{}'.format(i))(z_ti)
+        z_ti = keras.layers.GaussianNoise(sigma, name='encoder_noised_noise_{}'.format(i))(z_ti)
+        forward_scale_and_shift_layers.append(ScaleAndShift(mode=2, name='encoder_scale_and_shift_{}'.format(i)))
         y = forward_scale_and_shift_layers[-1](z_ti)
-        y = keras.layers.Activation('relu')(y)
+        y = keras.layers.Activation('relu', name='encoder_noised_{}'.format(i))(y)
         zs_ti.append(z_ti)
     output_noised = keras.layers.Dense(10, activation='softmax', name='output_noised')(y)
 
     y = flatten_x
     zs.append(y)
     zs_pre.append(y)
-    for forward_layer, forward_scale_and_shift_layer in zip(forward_layers, forward_scale_and_shift_layers):
+    for i, (forward_layer, forward_scale_and_shift_layer) in enumerate(zip(forward_layers, forward_scale_and_shift_layers)):
+        i += 1
         z_pre = forward_layer(y)
-        z = OnlyBatchNormalization(mode=2)(z_pre)
+        z = OnlyBatchNormalization(mode=2, name='encoder_clean_bn_{}'.format(i))(z_pre)
         y = forward_scale_and_shift_layer(z)
-        y = keras.layers.Activation('relu')(y)
+        y = keras.layers.Activation('relu', name='encoder_clean_{}'.format(i))(y)
         zs_pre.append(z_pre)
         zs.append(z)
     output = keras.layers.Dense(10, bias=False, activation='softmax', name='output')(y)
@@ -72,17 +74,15 @@ def noised_model(sigma=1.0):
     zs_bn_error = []
     z_hat = output_noised
     for i, unit_count in list(enumerate(unit_count_list))[::-1]:
-        u = keras.layers.Dense(unit_count, bias=False)(z_hat)
-        u = OnlyBatchNormalization(mode=2)(u)
-        z_hat = VanillaConbinator()([zs_ti[i], u])
-        if i != 0:
-            z_bn_hat = keras.layers.merge(
-                [z_hat, zs_pre[i]],
-                mode=batch_nomalize_other_layer,
-                output_shape=batch_nomalize_other_layer_shape,
-            )
-        else:
-            z_bn_hat = z_hat
+        u = keras.layers.Dense(unit_count, bias=False, name='decoder_dense_{}'.format(i))(z_hat)
+        u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(i))(u)
+        z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
+        z_bn_hat = keras.layers.merge(
+            [z_hat, zs_pre[i]],
+            mode=batch_nomalize_other_layer,
+            output_shape=batch_nomalize_other_layer_shape,
+            name='decoder_bn_pre_{}'.format(i)
+        )
         zs_bn_error.append(keras.layers.merge(
             [zs[i], z_bn_hat],
             mode=lambda xs: xs[0] - xs[1],
@@ -183,6 +183,9 @@ def train():
     denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(6), lams)])
 
     model = noised_model(0.3)
+
+    plot(model, 'model.png', show_shapes=True)
+
     model.summary()
     model.compile(
         keras.optimizers.Adam(0.002), merge({
