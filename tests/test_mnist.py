@@ -186,8 +186,8 @@ def train():
             X_train_labeled,
             merge({
                 "output": y_train_labeled,
-                "output_noised": y_train_labeled
-            }, y_train_denoise_error),
+                "output_noised": y_train_labeled,
+            }, y_train_denoise_error[:100]),
             validation_data=(X_test, merge({"output": to_onehot(y_test, 10), "output_noised": to_onehot(y_test, 10), }, y_test_denoise_error)),
             nb_epoch=1
         )
@@ -196,7 +196,7 @@ def train():
             merge({
                 "output": y_train_unlabeled,
                 "output_noised": y_train_unlabeled
-            }, y_train_denoise_error),
+            }, y_train_denoise_error[100:]),
             validation_data=(X_test, merge({"output": to_onehot(y_test, 10), "output_noised": to_onehot(y_test, 10), }, y_test_denoise_error)),
             nb_epoch=1
         )
