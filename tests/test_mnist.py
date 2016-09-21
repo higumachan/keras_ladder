@@ -180,18 +180,26 @@ def train():
     (X_train_labeled, y_train_labeled), (X_train_unlabeled, y_train_unlabeled) = split_labeled_unlabeled(X_train, y_train)
 
     print y_train_labeled.shape, y_train_unlabeled.shape
-    X_train = np.concatenate((X_train_labeled, X_train_unlabeled))
-    y_train = np.concatenate((y_train_labeled, y_train_unlabeled))
 
-    model.fit(
-        X_train,
-        merge({
-            "output": y_train,
-            "output_noised": y_train
-        }, y_train_denoise_error),
-        validation_data=(X_test, merge({"output": to_onehot(y_test, 10), "output_noised": to_onehot(y_test, 10), }, y_test_denoise_error)),
-        nb_epoch=10
-    )
+    for i in range(100):
+        model.fit(
+            X_train_labeled,
+            merge({
+                "output": y_train_labeled,
+                "output_noised": y_train_labeled
+            }, y_train_denoise_error),
+            validation_data=(X_test, merge({"output": to_onehot(y_test, 10), "output_noised": to_onehot(y_test, 10), }, y_test_denoise_error)),
+            nb_epoch=1
+        )
+        model.fit(
+            X_train_unlabeled,
+            merge({
+                "output": y_train_unlabeled,
+                "output_noised": y_train_unlabeled
+            }, y_train_denoise_error),
+            validation_data=(X_test, merge({"output": to_onehot(y_test, 10), "output_noised": to_onehot(y_test, 10), }, y_test_denoise_error)),
+            nb_epoch=1
+        )
 
 
 if __name__ == '__main__':
