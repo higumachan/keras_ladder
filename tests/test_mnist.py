@@ -28,7 +28,6 @@ def noised_model(sigma=1.0):
         28 * 28,
         1000,
         500,
-        500,
         250,
         250,
         250,
@@ -168,20 +167,19 @@ def train():
 
 
     labeled_count = 100
-    lams = [1000, 10, 0.2, 0.2, 0.2, 0.2, 0.2][::-1]
+    lams = [1000, 10, 0.2, 0.2, 0.2, 0.2]
     unit_count_list = [
         28 * 28,
         1000,
-        500,
         500,
         250,
         250,
         250,
     ]
-    y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((labeled_count, uc))) for i, uc in zip(range(7), unit_count_list)])
-    y_test_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_test.shape[0], uc))) for i, uc in zip(range(7), unit_count_list)])
-    denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(7)])
-    denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(7), lams)])
+    y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((labeled_count, uc))) for i, uc in enumerate(unit_count_list)])
+    y_test_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_test.shape[0], uc))) for i, uc in enumerate(unit_count_list)])
+    denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(6)])
+    denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(6), lams)])
 
     model = noised_model(0.3)
     model.summary()
@@ -200,22 +198,36 @@ def train():
     )
 
     (X_train_labeled, y_train_labeled), (X_train_unlabeled, y_train_unlabeled) = split_labeled_unlabeled(X_train, y_train)
+    print np.sum(y_train_labeled, axis=0)
 
     print y_train_labeled.shape, y_train_unlabeled.shape
 
-    for i in range(100):
-        model.fit_generator(
-            generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlabeled, y_train_denoise_error),
-            (y_train.shape[0] - labeled_count) * 2,
-            nb_epoch=100,
-            validation_data=(
-                X_test,
-                merge({
-                    "output": to_onehot(y_test),
-                    "output_noised": to_onehot(y_test),
-                }, y_test_denoise_error)
-            )
-        )
+    def scheduler(index):
+        return 0.002 if index < 100 else min(0, (index - 100) * -(0.002 / 50) + (0.002))
+
+    nmodel = normal_model()
+    nmodel.compile('adam', 'categorical_crossentropy', metrics=['accuracy'])
+    nmodel.fit(
+        X_train_labeled,
+        y_train_labeled,
+        validation_data=(X_test, to_onehot(y_test)),
+        nb_epoch=150,
+        callbacks=[keras.callbacks.LearningRateScheduler(scheduler)]
+    )
+
+    model.fit_generator(
+        generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlabeled, y_train_denoise_error),
+        (y_train.shape[0] - labeled_count) * 2,
+        nb_epoch=150,
+        validation_data=(
+            X_test,
+            merge({
+                "output": to_onehot(y_test),
+                "output_noised": to_onehot(y_test),
+            }, y_test_denoise_error)
+        ),
+        callbacks=[keras.callbacks.LearningRateScheduler(scheduler)]
+    )
 
 
 if __name__ == '__main__':
