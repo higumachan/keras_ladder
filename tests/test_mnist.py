@@ -145,10 +145,6 @@ def split_labeled_unlabeled(X, y, labeled_count=100):
 def train():
     (X_train, y_train), (X_test, y_test) = mnist.load_data()
 
-    model = normal_model()
-    model.compile('adam', 'mse', metrics=['accuracy'])
-    #model.fit(X_train, to_onehot(y_train, 10), validation_data=(X_test, to_onehot(y_test, 10)), nb_epoch=10)
-
 
     lams = [1000, 10, 0.2, 0.2, 0.2, 0.2, 0.2][::-1]
     unit_count_list = [
@@ -165,7 +161,7 @@ def train():
     denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(7)])
     denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(7), lams)])
 
-    model = noised_model(1.0)
+    model = noised_model(0.3)
     model.summary()
     model.compile(
         'adam', merge({
