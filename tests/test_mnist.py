@@ -48,10 +48,10 @@ def noised_model(sigma=1.0):
     for unit_count in unit_count_list[1:]:
         forward_layers.append(keras.layers.Dense(unit_count, bias=False))
         z_ti = forward_layers[-1](y)
-        forward_scale_and_shift_layers.append(OnlyBatchNormalization(mode=2))
-        z_ti = forward_scale_and_shift_layers[-1](z_ti)
+        z_ti = OnlyBatchNormalization(mode=2)(z_ti)
         z_ti = keras.layers.GaussianNoise(sigma)(z_ti)
-        y = ScaleAndShift(mode=2)(z_ti)
+        forward_scale_and_shift_layers.append(ScaleAndShift(mode=2))
+        y = forward_scale_and_shift_layers[-1](z_ti)
         y = keras.layers.Activation('relu')(y)
         zs_ti.append(z_ti)
     output_noised = keras.layers.Dense(10, activation='softmax', name='output_noised')(y)
