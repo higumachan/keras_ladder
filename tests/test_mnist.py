@@ -9,6 +9,11 @@ from keras.utils.visualize_util import plot
 import random
 
 
+class PrintOutputValAccOnly(keras.callbacks.Callback):
+    def on_batch_end(self, batch, logs={}):
+        print("val_output_acc:{val_output_acc}, val_output_noised_acc:{val_output_noised_acc}".format(**logs))
+
+
 def batch_nomalize_other_layer(xs):
     x, z = xs
 
@@ -168,8 +173,8 @@ def train():
 
     X_train = X_train.astype('float32')
     X_test = X_test.astype('float32')
-    X_train /= 255
-    X_test /= 255
+    X_train /= 255.0
+    X_test /= 255.0
 
 
     labeled_count = 100
@@ -237,7 +242,10 @@ def train():
                 "output_noised": to_onehot(y_test),
             }, y_test_denoise_error)
         ),
-        callbacks=[keras.callbacks.LearningRateScheduler(scheduler)]
+        callbacks=[
+            keras.callbacks.LearningRateScheduler(scheduler),
+            PrintOutputValAccOnly,
+        ]
     )
 
 
