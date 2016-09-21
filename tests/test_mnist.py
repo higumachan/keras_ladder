@@ -21,10 +21,14 @@ class PrintEvaluate(keras.callbacks.Callback):
 
 
     def on_epoch_end(self, batch, logs={}):
-        evaluate_result = self.model.evaluate(self.X_train, self.y_train)
+        evaluate_result = self.model.evaluate(
+                self.X_train, 
+                self.y_train
+                )
+        print evaluate_result
         print(
             "train_output_acc:{output_acc}, train_output_noised_acc:{output_noised_acc}".format(
-                **dict(zip(*evaluate_result))
+                **dict(zip(self.model.metrics_names, evaluate_result))
             )
         )
         print("val_output_acc:{val_output_acc}, val_output_noised_acc:{val_output_noised_acc}".format(**logs))
@@ -34,7 +38,7 @@ def batch_nomalize_other_layer(xs):
     x, z = xs
 
     mean = (K.mean(z, -1, keepdims=True))
-    std = K.sqrt(K.var(z, -1, keepdims=True)) + 1e-6
+    std = K.sqrt(K.var(z, -1, keepdims=True)) + 1e-10
 
     return (x - mean) / std
 
@@ -97,7 +101,7 @@ def noised_model(sigma=1.0):
     for i, unit_count in list(enumerate(unit_count_list))[::-1]:
         u = keras.layers.Dense(unit_count, bias=False, name='decoder_dense_{}'.format(i))(z_hat)
         u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(i))(u)
-        z_hat = LadderConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
+        z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
         z_bn_hat = keras.layers.merge(
             [z_hat, zs_pre[i]],
             mode=batch_nomalize_other_layer,
@@ -189,12 +193,12 @@ def train():
 
     X_train = X_train.astype('float32')
     X_test = X_test.astype('float32')
-    X_train /= 255.0
-    X_test /= 255.0
+    X_train /= 255
+    X_test /= 255
 
 
     labeled_count = 100
-    lams = [1000, 10, 0.2, 0.2, 0.2, 0.2]
+    lams = [2000, 10, 0.2, 0.2, 0.2, 0.2]
     unit_count_list = [
         28 * 28,
         1000,
@@ -203,6 +207,7 @@ def train():
         250,
         250,
     ]
+    y_train_all_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_train.shape[0], uc))) for i, uc in enumerate(unit_count_list)])
     y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((labeled_count, uc))) for i, uc in enumerate(unit_count_list)])
     y_test_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_test.shape[0], uc))) for i, uc in enumerate(unit_count_list)])
     denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(6)])
@@ -261,9 +266,15 @@ def train():
         callbacks=[
             keras.callbacks.LearningRateScheduler(scheduler),
             PrintOutputValAccOnly(),
-            PrintEvaluate(X_train, y_train),
-        ]
-    )
+            PrintEvaluate(
+                X_train, 
+                merge({
+                    "output": to_onehot(y_train),
+                    "output_noised": to_onehot(y_train),
+                    },y_train_all_denoise_error)
+                ),
+            ]
+        )
 
 
 if __name__ == '__main__':
