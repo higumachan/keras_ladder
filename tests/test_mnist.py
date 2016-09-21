@@ -46,7 +46,7 @@ def noised_model(sigma=1.0):
 
     zs_ti.append(y)
     for unit_count in unit_count_list[1:]:
-        forward_layers.append(keras.layers.Dense(unit_count))
+        forward_layers.append(keras.layers.Dense(unit_count, bias=False))
         z_ti = forward_layers[-1](y)
         forward_scale_and_shift_layers.append(OnlyBatchNormalization(mode=2))
         z_ti = forward_scale_and_shift_layers[-1](z_ti)
@@ -66,21 +66,23 @@ def noised_model(sigma=1.0):
         y = keras.layers.Activation('relu')(y)
         zs_pre.append(z_pre)
         zs.append(z)
-    output = keras.layers.Dense(10, activation='softmax', name='output')(y)
+    output = keras.layers.Dense(10, bias=False, activation='softmax', name='output')(y)
 
 
     zs_bn_error = []
     z_hat = output_noised
     for i, unit_count in list(enumerate(unit_count_list))[::-1]:
-        u = keras.layers.Dense(unit_count)(z_hat)
+        u = keras.layers.Dense(unit_count, bias=False)(z_hat)
         u = OnlyBatchNormalization(mode=2)(u)
         z_hat = VanillaConbinator()([zs_ti[i], u])
-        z_bn_hat = keras.layers.merge(
-            [z_hat, zs_pre[i]],
-            mode=batch_nomalize_other_layer,
-            output_shape=batch_nomalize_other_layer_shape,
-        )
-        #z_bn_hat = z_hat
+        if i != 0:
+            z_bn_hat = keras.layers.merge(
+                [z_hat, zs_pre[i]],
+                mode=batch_nomalize_other_layer,
+                output_shape=batch_nomalize_other_layer_shape,
+            )
+        else:
+            z_bn_hat = z_hat
         zs_bn_error.append(keras.layers.merge(
             [zs[i], z_bn_hat],
             mode=lambda xs: xs[0] - xs[1],
@@ -183,7 +185,7 @@ def train():
     model = noised_model(0.3)
     model.summary()
     model.compile(
-        'adam', merge({
+        keras.optimizers.Adam(0.002), merge({
             "output": 'categorical_crossentropy',
             'output_noised': 'categorical_crossentropy',
         },
@@ -204,6 +206,7 @@ def train():
     def scheduler(index):
         return 0.002 if index < 100 else max(0.0, (index - 100.0) * -(0.002 / 50) + 0.002)
 
+    """
     nmodel = normal_model()
     nmodel.compile('adam', 'categorical_crossentropy', metrics=['accuracy'])
     nmodel.fit(
@@ -213,6 +216,7 @@ def train():
         nb_epoch=150,
         callbacks=[keras.callbacks.LearningRateScheduler(scheduler)]
     )
+    """
 
     model.fit_generator(
         generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlabeled, y_train_denoise_error),
