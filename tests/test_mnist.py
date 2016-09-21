@@ -5,6 +5,7 @@ import keras
 from layers.vanilla_conbinator import VanillaConbinator
 import numpy as np
 from toolz.dicttoolz import merge
+import random
 
 
 def batch_nomalize_other_layer(xs):
@@ -142,10 +143,31 @@ def split_labeled_unlabeled(X, y, labeled_count=100):
     return (X[labeled_indices], to_onehot(y[labeled_indices])), (X[unlabeled_indices], to_zeros(y[unlabeled_indices]))
 
 
+def generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlabeled, y_train_denoise_error):
+    while True:
+        labeled_count = X_train_labeled.shape[0]
+        indices = range(len(y_train_unlabeled))
+        random.shuffle(indices)
+        X_train_unlabeled = X_train_unlabeled[indices]
+        for i in range(X_train_unlabeled.shape[0] / labeled_count):
+            yield (X_train_labeled, merge({
+                "output": y_train_labeled,
+                "output_noised": y_train_labeled,
+            }, y_train_denoise_error))
+            yield (
+                X_train_unlabeled[labeled_count * i:labeled_count * (i + 1)],
+                merge({
+                    "output": y_train_unlabeled[labeled_count * i:labeled_count * (i + 1)],
+                    "output_noised": y_train_unlabeled[labeled_count * i:labeled_count * (i + 1)],
+                }, y_train_denoise_error)
+            )
+
+
 def train():
     (X_train, y_train), (X_test, y_test) = mnist.load_data()
 
 
+    labeled_count = 100
     lams = [1000, 10, 0.2, 0.2, 0.2, 0.2, 0.2][::-1]
     unit_count_list = [
         28 * 28,
@@ -156,7 +178,7 @@ def train():
         250,
         250,
     ]
-    y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_train.shape[0], uc))) for i, uc in zip(range(7), unit_count_list)])
+    y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((labeled_count, uc))) for i, uc in zip(range(7), unit_count_list)])
     y_test_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_test.shape[0], uc))) for i, uc in zip(range(7), unit_count_list)])
     denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(7)])
     denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(7), lams)])
@@ -182,23 +204,17 @@ def train():
     print y_train_labeled.shape, y_train_unlabeled.shape
 
     for i in range(100):
-        model.fit(
-            X_train_labeled,
-            merge({
-                "output": y_train_labeled,
-                "output_noised": y_train_labeled,
-            }, y_train_denoise_error[:100]),
-            validation_data=(X_test, merge({"output": to_onehot(y_test, 10), "output_noised": to_onehot(y_test, 10), }, y_test_denoise_error)),
-            nb_epoch=1
-        )
-        model.fit(
-            X_train_unlabeled,
-            merge({
-                "output": y_train_unlabeled,
-                "output_noised": y_train_unlabeled
-            }, y_train_denoise_error[100:]),
-            validation_data=(X_test, merge({"output": to_onehot(y_test, 10), "output_noised": to_onehot(y_test, 10), }, y_test_denoise_error)),
-            nb_epoch=1
+        model.fit_generator(
+            generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlabeled, y_train_denoise_error),
+            (y_train.shape[0] - labeled_count) * 2,
+            nb_epoch=100,
+            validation_data=(
+                X_test,
+                merge({
+                    "output": to_onehot(y_test),
+                    "output_noised": to_onehot(y_test),
+                }, y_test_denoise_error)
+            )
         )
 
 
