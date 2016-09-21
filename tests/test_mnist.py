@@ -2,7 +2,7 @@ from keras.datasets import mnist
 from layers.batch_nomalize import OnlyBatchNormalization, ScaleAndShift
 import keras.backend as K
 import keras
-from layers.vanilla_conbinator import VanillaConbinator
+from layers.vanilla_conbinator import VanillaConbinator, LadderConbinator
 import numpy as np
 from toolz.dicttoolz import merge
 from keras.utils.visualize_util import plot
@@ -12,8 +12,8 @@ import random
 def batch_nomalize_other_layer(xs):
     x, z = xs
 
-    mean = (K.mean(z, 0, keepdims=True))
-    std = K.var(z, 0, keepdims=True) ** 0.5 + 1e-5
+    mean = (K.mean(z, -1, keepdims=True))
+    std = K.sqrt(K.var(z, -1, keepdims=True)) + 1e-6
 
     return (x - mean) / std
 
@@ -76,7 +76,7 @@ def noised_model(sigma=1.0):
     for i, unit_count in list(enumerate(unit_count_list))[::-1]:
         u = keras.layers.Dense(unit_count, bias=False, name='decoder_dense_{}'.format(i))(z_hat)
         u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(i))(u)
-        z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
+        z_hat = LadderConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
         z_bn_hat = keras.layers.merge(
             [z_hat, zs_pre[i]],
             mode=batch_nomalize_other_layer,
@@ -166,6 +166,11 @@ def generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlab
 def train():
     (X_train, y_train), (X_test, y_test) = mnist.load_data()
 
+    X_train = X_train.astype('float32')
+    X_test = X_test.astype('float32')
+    X_train /= 255
+    X_test /= 255
+
 
     labeled_count = 100
     lams = [1000, 10, 0.2, 0.2, 0.2, 0.2]
@@ -207,7 +212,7 @@ def train():
     print y_train_labeled.shape, y_train_unlabeled.shape
 
     def scheduler(index):
-        return 0.002 if index < 100 else max(0.0, (index - 100.0) * -(0.002 / 50) + 0.002)
+        return 0.002 if index < 100 else max(0.0, 0.002 * (150 - index) / 50.0)
 
     """
     nmodel = normal_model()
