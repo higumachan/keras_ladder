@@ -37,8 +37,8 @@ class PrintEvaluate(keras.callbacks.Callback):
 def batch_nomalize_other_layer(xs):
     x, z = xs
 
-    mean = (K.mean(z, -1, keepdims=True))
-    std = K.sqrt(K.var(z, -1, keepdims=True)) + 1e-10
+    mean = (K.mean(z, 0, keepdims=True))
+    std = K.sqrt(K.var(z, 0, keepdims=True)) + 1e-10
 
     return (x - mean) / std
 
@@ -57,6 +57,7 @@ def noised_model(sigma=1.0):
         250,
         250,
         250,
+        10
     ]
 
     x = keras.layers.Input((28, 28))
@@ -78,9 +79,12 @@ def noised_model(sigma=1.0):
         z_ti = keras.layers.GaussianNoise(sigma, name='encoder_noised_noise_{}'.format(i))(z_ti)
         forward_scale_and_shift_layers.append(ScaleAndShift(mode=2, name='encoder_scale_and_shift_{}'.format(i)))
         y = forward_scale_and_shift_layers[-1](z_ti)
-        y = keras.layers.Activation('relu', name='encoder_noised_{}'.format(i))(y)
+        if i != len(unit_count_list) - 1:
+            y = keras.layers.Activation('relu', name='encoder_noised_{}'.format(i))(y)
+        else:
+            y = keras.layers.Activation('softmax', name='output_noised')(y)
         zs_ti.append(z_ti)
-    output_noised = keras.layers.Dense(10, activation='softmax', name='output_noised')(y)
+    output_noised = y
 
     y = flatten_x
     zs.append(y)
@@ -90,24 +94,33 @@ def noised_model(sigma=1.0):
         z_pre = forward_layer(y)
         z = OnlyBatchNormalization(mode=2, name='encoder_clean_bn_{}'.format(i))(z_pre)
         y = forward_scale_and_shift_layer(z)
-        y = keras.layers.Activation('relu', name='encoder_clean_{}'.format(i))(y)
+        if i != len(unit_count_list) - 1:
+            y = keras.layers.Activation('relu', name='encoder_clean_{}'.format(i))(y)
+        else:
+            y = keras.layers.Activation('softmax', name='output')(y)
         zs_pre.append(z_pre)
         zs.append(z)
-    output = keras.layers.Dense(10, bias=False, activation='softmax', name='output')(y)
+    output = y
 
 
     zs_bn_error = []
     z_hat = output_noised
     for i, unit_count in list(enumerate(unit_count_list))[::-1]:
-        u = keras.layers.Dense(unit_count, bias=False, name='decoder_dense_{}'.format(i))(z_hat)
+        if i != len(unit_count_list) - 1:
+            u = keras.layers.Dense(unit_count, bias=False, name='decoder_dense_{}'.format(i))(z_hat)
+        else:
+            u = z_hat
         u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(i))(u)
         z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
-        z_bn_hat = keras.layers.merge(
-            [z_hat, zs_pre[i]],
-            mode=batch_nomalize_other_layer,
-            output_shape=batch_nomalize_other_layer_shape,
-            name='decoder_bn_pre_{}'.format(i)
-        )
+        if i != 0:
+            z_bn_hat = keras.layers.merge(
+                [z_hat, zs_pre[i]],
+                mode=batch_nomalize_other_layer,
+                output_shape=batch_nomalize_other_layer_shape,
+                name='decoder_bn_pre_{}'.format(i)
+            )
+        else:
+            z_bn_hat = z_hat
         zs_bn_error.append(keras.layers.merge(
             [zs[i], z_bn_hat],
             mode=lambda xs: xs[0] - xs[1],
@@ -198,7 +211,7 @@ def train():
 
 
     labeled_count = 100
-    lams = [2000, 10, 0.2, 0.2, 0.2, 0.2]
+    lams = [1000, 10, 0.1, 0.1, 0.1, 0.1, 0.1]
     unit_count_list = [
         28 * 28,
         1000,
@@ -206,12 +219,15 @@ def train():
         250,
         250,
         250,
+        10
     ]
     y_train_all_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_train.shape[0], uc))) for i, uc in enumerate(unit_count_list)])
     y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((labeled_count, uc))) for i, uc in enumerate(unit_count_list)])
     y_test_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_test.shape[0], uc))) for i, uc in enumerate(unit_count_list)])
-    denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(6)])
-    denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(6), lams)])
+    denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(7)])
+    denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(7), lams)])
+
+    print denoise_error_weights
 
     model = noised_model(0.3)
 
@@ -274,7 +290,7 @@ def train():
                     },y_train_all_denoise_error)
                 ),
             ],
-        verbose=0,
+        verbose=1,
         )
 
 
