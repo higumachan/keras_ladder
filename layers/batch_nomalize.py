@@ -259,7 +259,7 @@ class ScaleAndShift(Layer):
             broadcast_shape[self.axis] = input_shape[self.axis]
 
             if self.mode == 2:
-                x_normed = self.gamma * x + self.beta
+                x_normed = self.gamma * (x + self.beta)
             else:
                 # mode 0
                 if self.called_with not in {None, x}:
@@ -273,13 +273,13 @@ class ScaleAndShift(Layer):
                                     '(see docs for a description of '
                                     'the behavior).')
                 self.called_with = x
-                x_normed = self.gamma * x + self.beta
+                x_normed = self.gamma * (x + self.beta)
 
 
         elif self.mode == 1:
             # sample-wise normalization
             x_normed = x
-            x_normed = self.gamma * x_normed + self.beta
+            x_normed = self.gamma * (x_normed + self.beta)
         return x_normed
 
     def get_config(self):
