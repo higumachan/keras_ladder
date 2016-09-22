@@ -273,7 +273,8 @@ def train():
                     "output_noised": to_onehot(y_train),
                     },y_train_all_denoise_error)
                 ),
-            ]
+            ],
+        verbose=0,
         )
 
 
