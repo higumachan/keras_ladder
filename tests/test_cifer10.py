@@ -4,6 +4,9 @@ import random
 from toolz.dicttoolz import merge
 from layers.batch_nomalize import OnlyBatchNormalization, ScaleAndShift
 from layers.vanilla_conbinator import VanillaConbinator, LadderConbinator
+from layers.pool_where import (
+    PoolWhere
+)
 from keras.datasets import cifar10
 from keras.utils import np_utils
 from utils import (
@@ -15,6 +18,7 @@ from callbacks import (
     PrintEvaluate,
     PrintOutputValAccOnly
 )
+
 
 layers = [
     keras.layers.Convolution2D(3, 3, 3, border_mode='same', name='conv'),
@@ -71,12 +75,14 @@ def create_noised_model(sigma):
     zs_pre = []
     zs = []
     pooling_wheres = []
+    forward_layers = []
     forward_scale_and_shift_layers = []
 
     for i, (layer, next_layer) in list(enumerate(zip(layers, layers[1:] + [None])))[1:]:
-        z_ti  = layer.__class__(name='encoder_{}_{}'.format(layer.name, i), **config_without_name(layer.get_config()))(y)
+        forward_layers.append(layer.__class__(name='encoder_{}_{}'.format(layer.name, i), **config_without_name(layer.get_config())))
+        z_ti  = forward_layers[-1](y)
         if isinstance(layer, keras.layers.MaxPooling2D):
-            pooling_wheres.append(z_ti)
+            pooling_wheres.append(PoolWhere()([y, z_ti]))
         else:
             pooling_wheres.append(None)
         z_ti = OnlyBatchNormalization(mode=2, name='encoder_noised_bn_{}'.format(i))(z_ti)
@@ -98,7 +104,7 @@ def create_noised_model(sigma):
     y = x
     zs.append(y)
     zs_pre.appen(y)
-    for i, (forward_layer, forward_scale_and_shift_layer) in  enumerate(zip(layers, forward_scale_and_shift_layers)):
+    for i, (forward_layer, forward_scale_and_shift_layer) in  enumerate(zip(forward_layers, forward_scale_and_shift_layers)):
         z_pre = forward_layer(y)
         z = OnlyBatchNormalization(mode=2, name='encoder_clean_bn_{}'.format(i))(z_pre)
         y = forward_scale_and_shift_layer(z)
