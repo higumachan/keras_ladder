@@ -111,7 +111,7 @@ def noised_model(sigma=1.0):
         else:
             u = z_hat
         u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(i))(u)
-        z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
+        z_hat = LadderConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
         if i != 0:
             z_bn_hat = keras.layers.merge(
                 [z_hat, zs_pre[i]],
