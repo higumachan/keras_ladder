@@ -1,4 +1,5 @@
 import keras
+import keras.backend as K
 
 
 def getwhere(x):
@@ -10,5 +11,5 @@ def getwhere(x):
 
 
 def PoolWhere():
-    return lambda xs: keras.layers.merge(xs, mode=getwhere, output_shape=xs[0].shape)
+    return lambda xs: keras.layers.merge(xs, mode=getwhere, output_shape=lambda xs: xs[0])
 
