@@ -136,7 +136,7 @@ def create_noised_model(sigma):
         name='decoder_bn_pre_{}'.format(len(layers))
     )
     z_bn_error = keras.layers.merge(
-        [z_hat, z_bn_hat],
+        [zs[-1], z_bn_hat],
         mode=lambda xs: xs[0] - xs[1],
         output_shape=lambda xs: xs[0],
         name='denoise_error_{}'.format(len(layers)),
@@ -164,7 +164,7 @@ def create_noised_model(sigma):
         else:
             z_bn_hat = z_hat
         z_bn_error = keras.layers.merge(
-            [z_hat, z_bn_hat],
+            [zs[i], z_bn_hat],
             mode=lambda xs: xs[0] - xs[1],
             output_shape=lambda xs: xs[0],
             name='denoise_error_{}'.format(i),
