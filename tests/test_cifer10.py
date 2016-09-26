@@ -24,7 +24,7 @@ layers = [
     keras.layers.Convolution2D(3, 3, 3, border_mode='same', name='conv'),
     keras.layers.Convolution2D(96, 3, 3, border_mode='same', name='conv'),
     keras.layers.Convolution2D(96, 3, 3, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(96, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
     keras.layers.MaxPooling2D(name='pool'),
     keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
     keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
@@ -64,13 +64,11 @@ def create_model():
     y = keras.layers.Activation('softmax')(y)
 
     model = keras.models.Model(x, y)
-    print model.summary()
     return model
 
 
 def create_noised_model(sigma):
     x = keras.layers.Input((3, 32, 32))
-    y = x
     zs_ti = []
     zs_pre = []
     zs = []
@@ -78,7 +76,10 @@ def create_noised_model(sigma):
     forward_layers = []
     forward_scale_and_shift_layers = []
 
-    for i, (layer, next_layer) in list(enumerate(zip(layers, layers[1:] + [None])))[1:]:
+    y = keras.layers.GaussianNoise(sigma, name='input_noised')(x)
+    zs_ti.append(y)
+    pooling_wheres.append(None)
+    for i, layer in list(enumerate(layers))[1:]:
         forward_layers.append(layer.__class__(name='encoder_{}_{}'.format(layer.name, i), **config_without_name(layer.get_config())))
         z_ti  = forward_layers[-1](y)
         if isinstance(layer, keras.layers.MaxPooling2D):
@@ -92,31 +93,32 @@ def create_noised_model(sigma):
         y = keras.layers.advanced_activations.LeakyReLU(0.1)(y)
         zs_ti.append(z_ti)
     y = keras.layers.Flatten()(y)
-    z_ti = keras.layers.Dense(10)(y)
-    z_ti = OnlyBatchNormalization(mode=2, name='encoder_noised_bn_{}'.format(i))(z_ti)
-    z_ti = keras.layers.GaussianNoise(sigma, name='encoder_noised_noise_{}'.format(i))(z_ti)
-    forward_scale_and_shift_layers.append(ScaleAndShift(mode=2, name='encoder_scale_and_shift_{}'.format(i)))
+    forward_layers.append(keras.layers.Dense(10, name='encoder_noised_dense_{}'.format(len(layers))))
+    z_ti = forward_layers[-1](y)
+    z_ti = OnlyBatchNormalization(mode=2, name='encoder_noised_bn_{}'.format(len(layers)))(z_ti)
+    z_ti = keras.layers.GaussianNoise(sigma, name='encoder_noised_noise_{}'.format(len(layers)))(z_ti)
+    forward_scale_and_shift_layers.append(ScaleAndShift(mode=2, name='encoder_scale_and_shift_{}'.format(len(layers))))
     y = forward_scale_and_shift_layers[-1](z_ti)
-    y = keras.layers.Activation('softmax')(y)
+    y = keras.layers.Activation('softmax', name='output_noised')(y)
     zs_ti.append(z_ti)
     output_noised = y
 
     y = x
     zs.append(y)
-    zs_pre.appen(y)
-    for i, (forward_layer, forward_scale_and_shift_layer) in  enumerate(zip(forward_layers, forward_scale_and_shift_layers)):
+    zs_pre.append(y)
+    for i, (forward_layer, forward_scale_and_shift_layer) in list(enumerate(zip(forward_layers, forward_scale_and_shift_layers)))[:-1]:
         z_pre = forward_layer(y)
         z = OnlyBatchNormalization(mode=2, name='encoder_clean_bn_{}'.format(i))(z_pre)
         y = forward_scale_and_shift_layer(z)
         y = keras.layers.advanced_activations.LeakyReLU(0.1)(y)
         zs_pre.append(z_pre)
         zs.append(z)
-    y_flatten = keras.layers.Flatten()(y)
-    z_pre = keras.layers.Dense(10)(y_flatten)
-    z = OnlyBatchNormalization(mode=2, name='encoder_noised_bn_{}'.format(i))(z_pre)
-    forward_scale_and_shift_layers.append(ScaleAndShift(mode=2, name='encoder_scale_and_shift_{}'.format(i)))
+    flatten = keras.layers.Flatten()
+    y_flatten = flatten(y)
+    z_pre = forward_layers[-1](y_flatten)
+    z = OnlyBatchNormalization(mode=2, name='encoder_clean_bn_{}'.format(len(forward_layers)))(z_pre)
     y = forward_scale_and_shift_layers[-1](z_ti)
-    y = keras.layers.Activation('softmax')(y)
+    y = keras.layers.Activation('softmax', name='output')(y)
     zs_pre.append(z_pre)
     zs.append(z)
 
@@ -124,9 +126,10 @@ def create_noised_model(sigma):
     output = y
     
     zs_bn_error = []
+    zs_bn_error_shape = []
     z_hat = output_noised
 
-    u = keras.layers.Dense(y_flatten.get_output_shape_for()[1], name='decoder_dense_{}'.format(len(layers)))(z_hat)
+    u = output_noised
     u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(len(layers)))(u)
     z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(len(layers)))([zs_ti[-1], u])
     z_bn_hat = keras.layers.merge(
@@ -142,17 +145,23 @@ def create_noised_model(sigma):
         name='denoise_error_{}'.format(len(layers)),
     )
     zs_bn_error.append(z_bn_error)
+    zs_bn_error_shape.append((10,))
 
-    for i, layer in enumerate(layers)[::-1]:
+    for i, layer in list(enumerate(layers))[::-1]:
         if i != len(layers) - 1:
             if isinstance(layer, keras.layers.MaxPooling2D):
-                u = keras.layers.UpSampling2D(size=(2, 2), name='decoder_unpool_{}'.format(i))(z_hat)
+                backward_layer = keras.layers.UpSampling2D(size=(2, 2), name='decoder_unpool_{}'.format(i))
+                u = backward_layer(z_hat)
                 u = keras.layers.merge([u, pooling_wheres[i]], mode='mul', name='decoder_unpool_where_{}'.format(i))
             else:
-                u = layer.__class__(name='decoder_{}_{}'.format(layer.name, i), **config_without_name(layer.get_config))(z_hat)
+                backward_layer = layer.__class__(name='decoder_{}_{}'.format(layer.name, i), **config_without_name(layer.get_config()))
+                u = backward_layer(z_hat)
                 u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(i))(u)
         else:
-            u = z_hat
+            dense_size = flatten.output_shape[1]
+            u = keras.layers.Dense(dense_size, name='decoder_dense_{}'.format(i))(z_hat)
+            backward_layer = keras.layers.Reshape(forward_layers[-2].output_shape[1:])
+            u = backward_layer(u)
         z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(i))([zs_ti[i], u])
         if i != 0:
             z_bn_hat = keras.layers.merge(
@@ -170,8 +179,9 @@ def create_noised_model(sigma):
             name='denoise_error_{}'.format(i),
         )
         zs_bn_error.append(z_bn_error)
+        zs_bn_error_shape.append(backward_layer.output_shape)
 
-    return keras.models.Model(x, [output, output_noised] + zs_bn_error)
+    return keras.models.Model(x, [output, output_noised] + zs_bn_error), zs_bn_error_shape
 
 
 def generator_labeled(X_train_labeled, y_train_labeled, batch_size=100):
@@ -213,34 +223,73 @@ def main():
     X_train /= 255.0
     X_test /= 255.0
 
-    """
+    model, output_shapes = create_noised_model(0.3)
+    print model.summary()
+    print model.outputs
+
     lams = [
         1000,
         10,
-    ] + [0.0 if isinstance(layer, keras.layers.MaxPooling2D) else 0.1 for layer in layers]
+        ] + [0.0 if isinstance(layer, keras.layers.MaxPooling2D) else 0.1 for layer in layers[2:]] + [0.1]
     labeled_count = 4000
 
-    X_labeled, y_labeled, X_unlabeled, y_unlabeled = split_labeled_unlabeled(X_train, y_train, labeled_count)
-
-    y_train_all_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_train.shape[0], layers))) for i, layer in enumerate(layers)])
-    y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((labeled_count, layers))) for i, layer in enumerate(layers)])
-    y_test_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_test.shape[0], layers))) for i, layer in enumerate(layers)])
-    denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(len(layers))])
-    denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(len(layers)), lams)])
+    (X_train_labeled, y_train_labeled), (X_train_unlabeled, y_train_unlabeled) = split_labeled_unlabeled(X_train, y_train[:, 0], labeled_count)
 
 
-   po = PrintOutputValAccOnly()
-    """
-    print y_train
-    (X_labeled, y_labeled), (X_unlabeled, y_unlabeled) = split_labeled_unlabeled(X_train, y_train[:,0], 4000)
-    X_labeled = X_labeled[:4000]
+    y_train_all_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_train.shape[0],) + shape[1:])) for i, shape in enumerate(output_shapes)])
+    y_train_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((labeled_count,) +  shape[1:])) for i, shape in enumerate(output_shapes)])
+    y_test_denoise_error = dict([("denoise_error_{}".format(i), np.zeros((y_test.shape[0],) + shape[1:])) for i, shape in enumerate(output_shapes)])
+    denoise_error_objective = dict([("denoise_error_{}".format(i), "mse") for i in range(len(output_shapes))])
+    denoise_error_weights = dict([("denoise_error_{}".format(i), w) for i, w in zip(range(len(output_shapes)), lams)])
+
+
     y_test = np_utils.to_categorical(y_test, nb_classes)
 
     print X_train.shape, y_train.shape
 
-    model = create_model()
-    model.compile('adam', 'categorical_crossentropy', metrics=['accuracy'])
-    model.fit(X_labeled, y_labeled, validation_data=(X_test, y_test), nb_epoch=50, batch_size=128)
+    model.compile(
+        keras.optimizers.Adam(0.002), merge({
+            "output": 'categorical_crossentropy',
+            'output_noised': 'categorical_crossentropy',
+        },
+            denoise_error_objective
+        ),
+        metrics=['accuracy'],
+        loss_weights=merge({
+            'output': 0.0,
+            'output_noised': 1.0,
+        }, denoise_error_weights)
+    )
+
+    def scheduler(index):
+        return 0.002 if index < 100 else max(0.0, 0.002 * (150 - index) / 50.0)
+
+    model.fit_generator(
+        generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlabeled, y_train_denoise_error),
+        (y_train.shape[0] - labeled_count) * 2,
+        nb_epoch=150,
+        validation_data=(
+            X_test,
+            merge({
+                "output": y_test,
+                "output_noised": y_test,
+            }, y_test_denoise_error)
+        ),
+        callbacks=[
+            keras.callbacks.LearningRateScheduler(scheduler),
+            PrintOutputValAccOnly(),
+            PrintEvaluate(
+                X_train, 
+                merge({
+                    "output": y_train,
+                    "output_noised": y_train,
+                    },y_train_all_denoise_error)
+                ),
+            ],
+        verbose=1,
+        )
+
+
 
 
 if __name__ == '__main__':
