@@ -111,13 +111,14 @@ def create_noised_model(sigma):
         y = keras.layers.advanced_activations.LeakyReLU(0.1)(y)
         zs_pre.append(z_pre)
         zs.append(z)
-    y = keras.layers.Flatten()(y)
-    y = keras.layers.Dense(10)(y)
-    z_ti = OnlyBatchNormalization(mode=2, name='encoder_noised_bn_{}'.format(i))(z_ti)
+    y_flatten = keras.layers.Flatten()(y)
+    z_pre = keras.layers.Dense(10)(y_flatten)
+    z = OnlyBatchNormalization(mode=2, name='encoder_noised_bn_{}'.format(i))(z_pre)
     forward_scale_and_shift_layers.append(ScaleAndShift(mode=2, name='encoder_scale_and_shift_{}'.format(i)))
     y = forward_scale_and_shift_layers[-1](z_ti)
     y = keras.layers.Activation('softmax')(y)
-    zs_ti.append(z_ti)
+    zs_pre.append(z_pre)
+    zs.append(z)
 
 
     output = y
@@ -125,10 +126,27 @@ def create_noised_model(sigma):
     zs_bn_error = []
     z_hat = output_noised
 
+    u = keras.layers.Dense(y_flatten.get_output_shape_for()[1], name='decoder_dense_{}'.format(len(layers)))(z_hat)
+    u = OnlyBatchNormalization(mode=2, name='decoder_bn_{}'.format(len(layers)))(u)
+    z_hat = VanillaConbinator(name='decoder_conbinator_{}'.format(len(layers)))([zs_ti[-1], u])
+    z_bn_hat = keras.layers.merge(
+        [z_hat, zs_pre[-1]],
+        mode=batch_nomalize_other_layer,
+        output_shape=batch_nomalize_other_layer_shape,
+        name='decoder_bn_pre_{}'.format(len(layers))
+    )
+    z_bn_error = keras.layers.merge(
+        [z_hat, z_bn_hat],
+        mode=lambda xs: xs[0] - xs[1],
+        output_shape=lambda xs: xs[0],
+        name='denoise_error_{}'.format(len(layers)),
+    )
+    zs_bn_error.append(z_bn_error)
+
     for i, layer in enumerate(layers)[::-1]:
         if i != len(layers) - 1:
             if isinstance(layer, keras.layers.MaxPooling2D):
-                u = keras.layers.UpSampling2D(size=(2, 2), name='decoder_unpool_{}'.format(i))(y)
+                u = keras.layers.UpSampling2D(size=(2, 2), name='decoder_unpool_{}'.format(i))(z_hat)
                 u = keras.layers.merge([u, pooling_wheres[i]], mode='mul', name='decoder_unpool_where_{}'.format(i))
             else:
                 u = layer.__class__(name='decoder_{}_{}'.format(layer.name, i), **config_without_name(layer.get_config))(z_hat)
@@ -145,12 +163,13 @@ def create_noised_model(sigma):
             )
         else:
             z_bn_hat = z_hat
-        z_bn_hat = keras.layers.merge(
+        z_bn_error = keras.layers.merge(
             [z_hat, z_bn_hat],
             mode=lambda xs: xs[0] - xs[1],
             output_shape=lambda xs: xs[0],
             name='denoise_error_{}'.format(i),
         )
+        zs_bn_error.append(z_bn_error)
 
     return keras.models.Model(x, [output, output_noised] + zs_bn_error)
 
