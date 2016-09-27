@@ -180,7 +180,7 @@ def create_noised_model(sigma):
             name='denoise_error_{}'.format(i),
         )
         zs_bn_error.append(z_bn_error)
-        zs_bn_error_shape.append(backward_layer.output_shape)
+        zs_bn_error_shape.append(z_bn_error._keras_shape)
 
     return keras.models.Model(x, [output, output_noised] + zs_bn_error), zs_bn_error_shape[::-1]
 
@@ -200,10 +200,15 @@ def generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlab
         X_train_unlabeled = X_train_unlabeled[indices]
         for i in range(X_train_unlabeled.shape[0] / labeled_count):
             X_train_labeled_batch, y_train_labeled_batch = gen.next()
-            yield (X_train_labeled_batch, merge({
-                "output": y_train_labeled_batch,
-                "output_noised": y_train_labeled_batch,
-            }, y_train_denoise_error))
+            print X_train_labeled_batch.shape, y_train_labeled_batch.shape
+            yield (
+                    X_train_labeled_batch, 
+                    merge({
+                        "output": y_train_labeled_batch,
+                        "output_noised": y_train_labeled_batch,
+                        }, y_train_denoise_error)
+                    )
+            print X_train_unlabeled[batch_size * i:batch_size * (i + 1)].shape, y_train_unlabeled[batch_size * i:batch_size * (i + 1)].shape
             yield (
                 X_train_unlabeled[batch_size * i:batch_size * (i + 1)],
                 merge({
@@ -211,8 +216,6 @@ def generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlab
                     "output_noised": y_train_unlabeled[batch_size * i:batch_size * (i + 1)],
                 }, y_train_denoise_error)
             )
-
-
 
 
 def main():
