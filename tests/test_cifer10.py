@@ -22,17 +22,17 @@ from callbacks import (
 
 layers = [
     keras.layers.Convolution2D(3, 3, 3, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(96, 3, 3, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(96, 3, 3, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(24, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(24, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(48, 3, 3, border_mode='same', name='conv'),
     keras.layers.MaxPooling2D(name='pool'),
-    keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(48, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(48, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(48, 3, 3, border_mode='same', name='conv'),
     keras.layers.MaxPooling2D(name='pool'),
-    keras.layers.Convolution2D(192, 3, 3, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(192, 1, 1, border_mode='same', name='conv'),
-    keras.layers.Convolution2D(192, 1, 1, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(48, 3, 3, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(48, 1, 1, border_mode='same', name='conv'),
+    keras.layers.Convolution2D(48, 1, 1, border_mode='same', name='conv'),
 ]
 
 
@@ -145,13 +145,14 @@ def create_noised_model(sigma):
         name='denoise_error_{}'.format(len(layers)),
     )
     zs_bn_error.append(z_bn_error)
-    zs_bn_error_shape.append((10,))
+    zs_bn_error_shape.append((None, 10,))
 
     for i, layer in list(enumerate(layers))[::-1]:
         if i != len(layers) - 1:
             if isinstance(layer, keras.layers.MaxPooling2D):
                 backward_layer = keras.layers.UpSampling2D(size=(2, 2), name='decoder_unpool_{}'.format(i))
                 u = backward_layer(z_hat)
+                print backward_layer.output_shape
                 u = keras.layers.merge([u, pooling_wheres[i]], mode='mul', name='decoder_unpool_where_{}'.format(i))
             else:
                 backward_layer = layer.__class__(name='decoder_{}_{}'.format(layer.name, i), **config_without_name(layer.get_config()))
@@ -181,7 +182,7 @@ def create_noised_model(sigma):
         zs_bn_error.append(z_bn_error)
         zs_bn_error_shape.append(backward_layer.output_shape)
 
-    return keras.models.Model(x, [output, output_noised] + zs_bn_error), zs_bn_error_shape
+    return keras.models.Model(x, [output, output_noised] + zs_bn_error), zs_bn_error_shape[::-1]
 
 
 def generator_labeled(X_train_labeled, y_train_labeled, batch_size=100):
@@ -226,6 +227,7 @@ def main():
     model, output_shapes = create_noised_model(0.3)
     print model.summary()
     print model.outputs
+    print output_shapes
 
     lams = [
         1000,
@@ -266,7 +268,7 @@ def main():
 
     model.fit_generator(
         generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlabeled, y_train_denoise_error),
-        (y_train.shape[0] - labeled_count) * 2,
+        (X_train_labeled.shape[0]) * 2,
         nb_epoch=150,
         validation_data=(
             X_test,
