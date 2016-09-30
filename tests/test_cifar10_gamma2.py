@@ -71,6 +71,7 @@ def create_noised_model(sigma):
     forward_layers = []
     forward_scale_and_shift_layers = []
 
+    # noised encoder
     y = keras.layers.GaussianNoise(sigma, name='input_noised')(x)
     zs_ti.append(y)
     for i, layer in list(enumerate(layers))[1:]:
@@ -85,11 +86,11 @@ def create_noised_model(sigma):
         z_ti_flat = keras.layers.Flatten()(z_ti)
         z_ti_flat = OnlyBatchNormalization(mode=1, name='encoder_noised_bn_{}'.format(i))(z_ti_flat)
         z_ti_flat = keras.layers.GaussianNoise(sigma, name='encoder_noised_noise_{}'.format(i))(z_ti_flat)
-        z_ti = keras.layers.Reshape(forward_layers[-1].output_shape[1:])(z_ti_flat)
-
         forward_scale_and_shift_layers.append(ScaleAndShift(mode=2, name='encoder_scale_and_shift_{}'.format(i)))
-        y = forward_scale_and_shift_layers[-1](z_ti)
+        y = forward_scale_and_shift_layers[-1](z_ti_flat)
+        y = keras.layers.Reshape(forward_layers[-1].output_shape[1:])(y)
         y = keras.layers.advanced_activations.LeakyReLU(0.1)(y)
+        z_ti = keras.layers.Reshape(forward_layers[-1].output_shape[1:])(z_ti_flat)
         zs_ti.append(z_ti)
     y = keras.layers.Flatten()(y)
     forward_layers.append(keras.layers.Dense(10, name='encoder_noised_dense_{}'.format(len(layers))))
@@ -102,6 +103,7 @@ def create_noised_model(sigma):
     zs_ti.append(z_ti)
     output_noised = y
 
+    # clean encoder
     y = x
     zs.append(y)
     zs_pre.append(y)
@@ -110,10 +112,10 @@ def create_noised_model(sigma):
         # flatten and reshape
         z_pre_flat = keras.layers.Flatten()(z_pre)
         z = OnlyBatchNormalization(mode=1, name='encoder_clean_bn_{}'.format(i))(z_pre_flat)
-        z = keras.layers.Reshape(forward_layer.output_shape[1:])(z)
-
         y = forward_scale_and_shift_layer(z)
+        y = keras.layers.Reshape(forward_layer.output_shape[1:])(y)
         y = keras.layers.advanced_activations.LeakyReLU(0.1)(y)
+        z = keras.layers.Reshape(forward_layer.output_shape[1:])(z)
         zs_pre.append(z_pre)
         zs.append(z)
     flatten = keras.layers.Flatten()
@@ -125,7 +127,7 @@ def create_noised_model(sigma):
     zs_pre.append(z_pre)
     zs.append(z)
 
-
+    # decoder
     output = y
     
     zs_bn_error = []
@@ -149,8 +151,6 @@ def create_noised_model(sigma):
     )
     zs_bn_error.append(z_bn_error)
     zs_bn_error_shape.append((None, 10,))
-
-
 
     for i, layer in list(enumerate(layers))[::-1]:
         if i != len(layers) - 1:
@@ -230,12 +230,18 @@ def generator(X_train_labeled, X_train_unlabeled, y_train_labeled, y_train_unlab
 
 def main():
     nb_classes = 10
+    X_train = np.load('data/X_train.npy')
+    y_train = np.load('data/y_train.npy')
+    X_test = np.load('data/X_test.npy')
+    y_test = np.load('data/y_test.npy')
 
+    """
     (X_train, y_train), (X_test, y_test) = cifar10.load_data()
     X_train = X_train.astype('float32')
     X_test = X_test.astype('float32')
     X_train /= 255.0
     X_test /= 255.0
+    """
 
     model, output_shapes = create_noised_model(0.50)
     print model.summary()
